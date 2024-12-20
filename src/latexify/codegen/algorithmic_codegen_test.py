@@ -45,6 +45,28 @@ def test_visit_assign(code: str, latex: str) -> None:
     "code,latex",
     [
         (
+            "for i in {1}: x = i",
+            r"""
+            \For{$i \in \mathopen{}\left\{ 1 \mathclose{}\right\}$}
+                \State $x \gets i$
+            \EndFor
+            """,
+        ),
+    ],
+)
+def test_visit_for(code: str, latex: str) -> None:
+    node = ast.parse(textwrap.dedent(code)).body[0]
+    assert isinstance(node, ast.For)
+    assert (
+        algorithmic_codegen.AlgorithmicCodegen().visit(node)
+        == textwrap.dedent(latex).strip()
+    )
+
+
+@pytest.mark.parametrize(
+    "code,latex",
+    [
+        (
             "def f(x): return x",
             r"""
             \begin{algorithmic}
@@ -167,6 +189,33 @@ def test_visit_while_with_else() -> None:
         algorithmic_codegen.AlgorithmicCodegen().visit(node)
 
 
+def test_visit_pass() -> None:
+    node = ast.parse("pass").body[0]
+    assert isinstance(node, ast.Pass)
+    assert (
+        algorithmic_codegen.AlgorithmicCodegen().visit(node)
+        == r"\State $\mathbf{pass}$"
+    )
+
+
+def test_visit_break() -> None:
+    node = ast.parse("break").body[0]
+    assert isinstance(node, ast.Break)
+    assert (
+        algorithmic_codegen.AlgorithmicCodegen().visit(node)
+        == r"\State $\mathbf{break}$"
+    )
+
+
+def test_visit_continue() -> None:
+    node = ast.parse("continue").body[0]
+    assert isinstance(node, ast.Continue)
+    assert (
+        algorithmic_codegen.AlgorithmicCodegen().visit(node)
+        == r"\State $\mathbf{continue}$"
+    )
+
+
 @pytest.mark.parametrize(
     "code,latex",
     [
@@ -178,6 +227,29 @@ def test_visit_assign_ipython(code: str, latex: str) -> None:
     node = ast.parse(textwrap.dedent(code)).body[0]
     assert isinstance(node, ast.Assign)
     assert algorithmic_codegen.IPythonAlgorithmicCodegen().visit(node) == latex
+
+
+@pytest.mark.parametrize(
+    "code,latex",
+    [
+        (
+            "for i in {1}: x = i",
+            (
+                r"\mathbf{for} \ i \in \mathopen{}\left\{ 1 \mathclose{}\right\}"
+                r" \ \mathbf{do} \\"
+                r" \hspace{1em} x \gets i \\"
+                r" \mathbf{end \ for}"
+            ),
+        ),
+    ],
+)
+def test_visit_for_ipython(code: str, latex: str) -> None:
+    node = ast.parse(textwrap.dedent(code)).body[0]
+    assert isinstance(node, ast.For)
+    assert (
+        algorithmic_codegen.IPythonAlgorithmicCodegen().visit(node)
+        == textwrap.dedent(latex).strip()
+    )
 
 
 @pytest.mark.parametrize(
@@ -297,3 +369,28 @@ def test_visit_while_with_else_ipython() -> None:
         match="^While statement with the else clause is not supported$",
     ):
         algorithmic_codegen.IPythonAlgorithmicCodegen().visit(node)
+
+
+def test_visit_pass_ipython() -> None:
+    node = ast.parse("pass").body[0]
+    assert isinstance(node, ast.Pass)
+    assert (
+        algorithmic_codegen.IPythonAlgorithmicCodegen().visit(node) == r"\mathbf{pass}"
+    )
+
+
+def test_visit_break_ipython() -> None:
+    node = ast.parse("break").body[0]
+    assert isinstance(node, ast.Break)
+    assert (
+        algorithmic_codegen.IPythonAlgorithmicCodegen().visit(node) == r"\mathbf{break}"
+    )
+
+
+def test_visit_continue_ipython() -> None:
+    node = ast.parse("continue").body[0]
+    assert isinstance(node, ast.Continue)
+    assert (
+        algorithmic_codegen.IPythonAlgorithmicCodegen().visit(node)
+        == r"\mathbf{continue}"
+    )

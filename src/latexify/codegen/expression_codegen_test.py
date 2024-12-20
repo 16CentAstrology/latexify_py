@@ -6,7 +6,7 @@ import ast
 
 import pytest
 
-from latexify import ast_utils, exceptions, test_utils
+from latexify import ast_utils, exceptions
 from latexify.codegen import expression_codegen
 
 
@@ -219,8 +219,29 @@ def test_visit_call(code: str, latex: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "code,latex",
+    [
+        ("log(x)**2", r"\mathopen{}\left( \log x \mathclose{}\right)^{2}"),
+        ("log(x**2)", r"\log \mathopen{}\left( x^{2} \mathclose{}\right)"),
+        (
+            "log(x**2)**3",
+            r"\mathopen{}\left("
+            r" \log \mathopen{}\left( x^{2} \mathclose{}\right)"
+            r" \mathclose{}\right)^{3}",
+        ),
+    ],
+)
+def test_visit_call_with_pow(code: str, latex: str) -> None:
+    node = ast_utils.parse_expr(code)
+    assert isinstance(node, (ast.Call, ast.BinOp))
+    assert expression_codegen.ExpressionCodegen().visit(node) == latex
+
+
+@pytest.mark.parametrize(
     "src_suffix,dest_suffix",
     [
+        # No arguments
+        ("()", r" \mathopen{}\left( \mathclose{}\right)"),
         # No comprehension
         ("(x)", r" x"),
         (
@@ -454,8 +475,8 @@ def test_if_then_else(code: str, latex: str) -> None:
     [
         # x op y
         ("x**y", r"x^{y}"),
-        ("x * y", r"x \cdot y"),
-        ("x @ y", r"x \cdot y"),
+        ("x * y", r"x y"),
+        ("x @ y", r"x y"),
         ("x / y", r"\frac{x}{y}"),
         ("x // y", r"\left\lfloor\frac{x}{y}\right\rfloor"),
         ("x % y", r"x \mathbin{\%} y"),
@@ -468,8 +489,8 @@ def test_if_then_else(code: str, latex: str) -> None:
         ("x | y", R"x \mathbin{|} y"),
         # (x op y) op z
         ("(x**y)**z", r"\mathopen{}\left( x^{y} \mathclose{}\right)^{z}"),
-        ("(x * y) * z", r"x \cdot y \cdot z"),
-        ("(x @ y) @ z", r"x \cdot y \cdot z"),
+        ("(x * y) * z", r"x y z"),
+        ("(x @ y) @ z", r"x y z"),
         ("(x / y) / z", r"\frac{\frac{x}{y}}{z}"),
         (
             "(x // y) // z",
@@ -485,8 +506,8 @@ def test_if_then_else(code: str, latex: str) -> None:
         ("(x | y) | z", r"x \mathbin{|} y \mathbin{|} z"),
         # x op (y op z)
         ("x**(y**z)", r"x^{y^{z}}"),
-        ("x * (y * z)", r"x \cdot y \cdot z"),
-        ("x @ (y @ z)", r"x \cdot y \cdot z"),
+        ("x * (y * z)", r"x y z"),
+        ("x @ (y @ z)", r"x y z"),
         ("x / (y / z)", r"\frac{x}{\frac{y}{z}}"),
         (
             "x // (y // z)",
@@ -504,9 +525,9 @@ def test_if_then_else(code: str, latex: str) -> None:
         ("x ^ (y ^ z)", r"x \oplus y \oplus z"),
         ("x | (y | z)", r"x \mathbin{|} y \mathbin{|} z"),
         # x OP y op z
-        ("x**y * z", r"x^{y} \cdot z"),
-        ("x * y + z", r"x \cdot y + z"),
-        ("x @ y + z", r"x \cdot y + z"),
+        ("x**y * z", r"x^{y} z"),
+        ("x * y + z", r"x y + z"),
+        ("x @ y + z", r"x y + z"),
         ("x / y + z", r"\frac{x}{y} + z"),
         ("x // y + z", r"\left\lfloor\frac{x}{y}\right\rfloor + z"),
         ("x % y + z", r"x \mathbin{\%} y + z"),
@@ -517,7 +538,7 @@ def test_if_then_else(code: str, latex: str) -> None:
         ("x & y ^ z", r"x \mathbin{\&} y \oplus z"),
         ("x ^ y | z", r"x \oplus y \mathbin{|} z"),
         # x OP (y op z)
-        ("x**(y * z)", r"x^{y \cdot z}"),
+        ("x**(y * z)", r"x^{y z}"),
         ("x * (y + z)", r"x \cdot \mathopen{}\left( y + z \mathclose{}\right)"),
         ("x @ (y + z)", r"x \cdot \mathopen{}\left( y + z \mathclose{}\right)"),
         ("x / (y + z)", r"\frac{x}{y + z}"),
@@ -542,9 +563,9 @@ def test_if_then_else(code: str, latex: str) -> None:
             r"x \oplus \mathopen{}\left( y \mathbin{|} z \mathclose{}\right)",
         ),
         # x op y OP z
-        ("x * y**z", r"x \cdot y^{z}"),
-        ("x + y * z", r"x + y \cdot z"),
-        ("x + y @ z", r"x + y \cdot z"),
+        ("x * y**z", r"x y^{z}"),
+        ("x + y * z", r"x + y z"),
+        ("x + y @ z", r"x + y z"),
         ("x + y / z", r"x + \frac{y}{z}"),
         ("x + y // z", r"x + \left\lfloor\frac{y}{z}\right\rfloor"),
         ("x + y % z", r"x + y \mathbin{\%} z"),
@@ -555,9 +576,9 @@ def test_if_then_else(code: str, latex: str) -> None:
         ("x ^ y & z", r"x \oplus y \mathbin{\&} z"),
         ("x | y ^ z", r"x \mathbin{|} y \oplus z"),
         # (x op y) OP z
-        ("(x * y)**z", r"\mathopen{}\left( x \cdot y \mathclose{}\right)^{z}"),
-        ("(x + y) * z", r"\mathopen{}\left( x + y \mathclose{}\right) \cdot z"),
-        ("(x + y) @ z", r"\mathopen{}\left( x + y \mathclose{}\right) \cdot z"),
+        ("(x * y)**z", r"\mathopen{}\left( x y \mathclose{}\right)^{z}"),
+        ("(x + y) * z", r"\mathopen{}\left( x + y \mathclose{}\right) z"),
+        ("(x + y) @ z", r"\mathopen{}\left( x + y \mathclose{}\right) z"),
         ("(x + y) / z", r"\frac{x + y}{z}"),
         ("(x + y) // z", r"\left\lfloor\frac{x + y}{z}\right\rfloor"),
         ("(x + y) % z", r"\mathopen{}\left( x + y \mathclose{}\right) \mathbin{\%} z"),
@@ -600,8 +621,8 @@ def test_if_then_else(code: str, latex: str) -> None:
         # With UnaryOp
         ("x**-y", r"x^{-y}"),
         ("(-x)**y", r"\mathopen{}\left( -x \mathclose{}\right)^{y}"),
-        ("x * -y", r"x \cdot -y"),  # TODO(odashi): google/latexify_py#89
-        ("-x * y", r"-x \cdot y"),
+        ("x * -y", r"x \cdot -y"),
+        ("-x * y", r"-x y"),
         ("x / -y", r"\frac{x}{-y}"),
         ("-x / y", r"\frac{-x}{y}"),
         ("x + -y", r"x + -y"),
@@ -610,7 +631,7 @@ def test_if_then_else(code: str, latex: str) -> None:
         ("x**(y == z)", r"x^{y = z}"),
         ("(x == y)**z", r"\mathopen{}\left( x = y \mathclose{}\right)^{z}"),
         ("x * (y == z)", r"x \cdot \mathopen{}\left( y = z \mathclose{}\right)"),
-        ("(x == y) * z", r"\mathopen{}\left( x = y \mathclose{}\right) \cdot z"),
+        ("(x == y) * z", r"\mathopen{}\left( x = y \mathclose{}\right) z"),
         ("x / (y == z)", r"\frac{x}{y = z}"),
         ("(x == y) / z", r"\frac{x = y}{z}"),
         ("x + (y == z)", r"x + \mathopen{}\left( y = z \mathclose{}\right)"),
@@ -619,7 +640,7 @@ def test_if_then_else(code: str, latex: str) -> None:
         ("x**(y and z)", r"x^{y \land z}"),
         ("(x and y)**z", r"\mathopen{}\left( x \land y \mathclose{}\right)^{z}"),
         ("x * (y and z)", r"x \cdot \mathopen{}\left( y \land z \mathclose{}\right)"),
-        ("(x and y) * z", r"\mathopen{}\left( x \land y \mathclose{}\right) \cdot z"),
+        ("(x and y) * z", r"\mathopen{}\left( x \land y \mathclose{}\right) z"),
         ("x / (y and z)", r"\frac{x}{y \land z}"),
         ("(x and y) / z", r"\frac{x \land y}{z}"),
         ("x + (y and z)", r"x + \mathopen{}\left( y \land z \mathclose{}\right)"),
@@ -771,32 +792,6 @@ def test_visit_boolop(code: str, latex: str) -> None:
     assert expression_codegen.ExpressionCodegen().visit(tree) == latex
 
 
-@test_utils.require_at_most(7)
-@pytest.mark.parametrize(
-    "code,cls,latex",
-    [
-        ("0", ast.Num, "0"),
-        ("1", ast.Num, "1"),
-        ("0.0", ast.Num, "0.0"),
-        ("1.5", ast.Num, "1.5"),
-        ("0.0j", ast.Num, "0j"),
-        ("1.0j", ast.Num, "1j"),
-        ("1.5j", ast.Num, "1.5j"),
-        ('"abc"', ast.Str, r'\textrm{"abc"}'),
-        ('b"abc"', ast.Bytes, r"\textrm{b'abc'}"),
-        ("None", ast.NameConstant, r"\mathrm{None}"),
-        ("False", ast.NameConstant, r"\mathrm{False}"),
-        ("True", ast.NameConstant, r"\mathrm{True}"),
-        ("...", ast.Ellipsis, r"\cdots"),
-    ],
-)
-def test_visit_constant_lagacy(code: str, cls: type[ast.expr], latex: str) -> None:
-    tree = ast_utils.parse_expr(code)
-    assert isinstance(tree, cls)
-    assert expression_codegen.ExpressionCodegen().visit(tree) == latex
-
-
-@test_utils.require_at_least(8)
 @pytest.mark.parametrize(
     "code,latex",
     [
@@ -970,3 +965,278 @@ def test_identity(code: str, latex: str) -> None:
     tree = ast_utils.parse_expr(code)
     assert isinstance(tree, ast.Call)
     assert expression_codegen.ExpressionCodegen().visit(tree) == latex
+
+
+@pytest.mark.parametrize(
+    "code,latex",
+    [
+        ("transpose(A)", r"\mathbf{A}^\intercal"),
+        ("transpose(b)", r"\mathbf{b}^\intercal"),
+        # Unsupported
+        ("transpose()", r"\mathrm{transpose} \mathopen{}\left( \mathclose{}\right)"),
+        ("transpose(2)", r"\mathrm{transpose} \mathopen{}\left( 2 \mathclose{}\right)"),
+        (
+            "transpose(a, (1, 0))",
+            r"\mathrm{transpose} \mathopen{}\left( a, "
+            r"\mathopen{}\left( 1, 0 \mathclose{}\right) \mathclose{}\right)",
+        ),
+    ],
+)
+def test_transpose(code: str, latex: str) -> None:
+    tree = ast_utils.parse_expr(code)
+    assert isinstance(tree, ast.Call)
+    assert expression_codegen.ExpressionCodegen().visit(tree) == latex
+
+
+@pytest.mark.parametrize(
+    "code,latex",
+    [
+        ("det(A)", r"\det \mathopen{}\left( \mathbf{A} \mathclose{}\right)"),
+        ("det(b)", r"\det \mathopen{}\left( \mathbf{b} \mathclose{}\right)"),
+        (
+            "det([[1, 2], [3, 4]])",
+            r"\det \mathopen{}\left( \begin{bmatrix} 1 & 2 \\"
+            r" 3 & 4 \end{bmatrix} \mathclose{}\right)",
+        ),
+        (
+            "det([[1, 2, 3], [4, 5, 6], [7, 8, 9]])",
+            r"\det \mathopen{}\left( \begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\"
+            r" 7 & 8 & 9 \end{bmatrix} \mathclose{}\right)",
+        ),
+        # Unsupported
+        ("det()", r"\mathrm{det} \mathopen{}\left( \mathclose{}\right)"),
+        ("det(2)", r"\mathrm{det} \mathopen{}\left( 2 \mathclose{}\right)"),
+        (
+            "det(a, (1, 0))",
+            r"\mathrm{det} \mathopen{}\left( a, "
+            r"\mathopen{}\left( 1, 0 \mathclose{}\right) \mathclose{}\right)",
+        ),
+    ],
+)
+def test_determinant(code: str, latex: str) -> None:
+    tree = ast_utils.parse_expr(code)
+    assert isinstance(tree, ast.Call)
+    assert expression_codegen.ExpressionCodegen().visit(tree) == latex
+
+
+@pytest.mark.parametrize(
+    "code,latex",
+    [
+        (
+            "matrix_rank(A)",
+            r"\mathrm{rank} \mathopen{}\left( \mathbf{A} \mathclose{}\right)",
+        ),
+        (
+            "matrix_rank(b)",
+            r"\mathrm{rank} \mathopen{}\left( \mathbf{b} \mathclose{}\right)",
+        ),
+        (
+            "matrix_rank([[1, 2], [3, 4]])",
+            r"\mathrm{rank} \mathopen{}\left( \begin{bmatrix} 1 & 2 \\"
+            r" 3 & 4 \end{bmatrix} \mathclose{}\right)",
+        ),
+        (
+            "matrix_rank([[1, 2, 3], [4, 5, 6], [7, 8, 9]])",
+            r"\mathrm{rank} \mathopen{}\left( \begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\"
+            r" 7 & 8 & 9 \end{bmatrix} \mathclose{}\right)",
+        ),
+        # Unsupported
+        (
+            "matrix_rank()",
+            r"\mathrm{matrix\_rank} \mathopen{}\left( \mathclose{}\right)",
+        ),
+        (
+            "matrix_rank(2)",
+            r"\mathrm{matrix\_rank} \mathopen{}\left( 2 \mathclose{}\right)",
+        ),
+        (
+            "matrix_rank(a, (1, 0))",
+            r"\mathrm{matrix\_rank} \mathopen{}\left( a, "
+            r"\mathopen{}\left( 1, 0 \mathclose{}\right) \mathclose{}\right)",
+        ),
+    ],
+)
+def test_matrix_rank(code: str, latex: str) -> None:
+    tree = ast_utils.parse_expr(code)
+    assert isinstance(tree, ast.Call)
+    assert expression_codegen.ExpressionCodegen().visit(tree) == latex
+
+
+@pytest.mark.parametrize(
+    "code,latex",
+    [
+        ("matrix_power(A, 2)", r"\mathbf{A}^{2}"),
+        ("matrix_power(b, 2)", r"\mathbf{b}^{2}"),
+        (
+            "matrix_power([[1, 2], [3, 4]], 2)",
+            r"\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}^{2}",
+        ),
+        (
+            "matrix_power([[1, 2, 3], [4, 5, 6], [7, 8, 9]], 42)",
+            r"\begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\ 7 & 8 & 9 \end{bmatrix}^{42}",
+        ),
+        # Unsupported
+        (
+            "matrix_power()",
+            r"\mathrm{matrix\_power} \mathopen{}\left( \mathclose{}\right)",
+        ),
+        (
+            "matrix_power(2)",
+            r"\mathrm{matrix\_power} \mathopen{}\left( 2 \mathclose{}\right)",
+        ),
+        (
+            "matrix_power(a, (1, 0))",
+            r"\mathrm{matrix\_power} \mathopen{}\left( a, "
+            r"\mathopen{}\left( 1, 0 \mathclose{}\right) \mathclose{}\right)",
+        ),
+    ],
+)
+def test_matrix_power(code: str, latex: str) -> None:
+    tree = ast_utils.parse_expr(code)
+    assert isinstance(tree, ast.Call)
+    assert expression_codegen.ExpressionCodegen().visit(tree) == latex
+
+
+@pytest.mark.parametrize(
+    "code,latex",
+    [
+        ("inv(A)", r"\mathbf{A}^{-1}"),
+        ("inv(b)", r"\mathbf{b}^{-1}"),
+        ("inv([[1, 2], [3, 4]])", r"\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}^{-1}"),
+        (
+            "inv([[1, 2, 3], [4, 5, 6], [7, 8, 9]])",
+            r"\begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\ 7 & 8 & 9 \end{bmatrix}^{-1}",
+        ),
+        # Unsupported
+        ("inv()", r"\mathrm{inv} \mathopen{}\left( \mathclose{}\right)"),
+        ("inv(2)", r"\mathrm{inv} \mathopen{}\left( 2 \mathclose{}\right)"),
+        (
+            "inv(a, (1, 0))",
+            r"\mathrm{inv} \mathopen{}\left( a, "
+            r"\mathopen{}\left( 1, 0 \mathclose{}\right) \mathclose{}\right)",
+        ),
+    ],
+)
+def test_inv(code: str, latex: str) -> None:
+    tree = ast_utils.parse_expr(code)
+    assert isinstance(tree, ast.Call)
+    assert expression_codegen.ExpressionCodegen().visit(tree) == latex
+
+
+@pytest.mark.parametrize(
+    "code,latex",
+    [
+        ("pinv(A)", r"\mathbf{A}^{+}"),
+        ("pinv(b)", r"\mathbf{b}^{+}"),
+        ("pinv([[1, 2], [3, 4]])", r"\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}^{+}"),
+        (
+            "pinv([[1, 2, 3], [4, 5, 6], [7, 8, 9]])",
+            r"\begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\ 7 & 8 & 9 \end{bmatrix}^{+}",
+        ),
+        # Unsupported
+        ("pinv()", r"\mathrm{pinv} \mathopen{}\left( \mathclose{}\right)"),
+        ("pinv(2)", r"\mathrm{pinv} \mathopen{}\left( 2 \mathclose{}\right)"),
+        (
+            "pinv(a, (1, 0))",
+            r"\mathrm{pinv} \mathopen{}\left( a, "
+            r"\mathopen{}\left( 1, 0 \mathclose{}\right) \mathclose{}\right)",
+        ),
+    ],
+)
+def test_pinv(code: str, latex: str) -> None:
+    tree = ast_utils.parse_expr(code)
+    assert isinstance(tree, ast.Call)
+    assert expression_codegen.ExpressionCodegen().visit(tree) == latex
+
+
+# Check list for #89.
+# https://github.com/google/latexify_py/issues/89#issuecomment-1344967636
+@pytest.mark.parametrize(
+    "left,right,latex",
+    [
+        ("2", "3", r"2 \cdot 3"),
+        ("2", "y", "2 y"),
+        ("2", "beta", r"2 \beta"),
+        ("2", "bar", r"2 \mathrm{bar}"),
+        ("2", "g(y)", r"2 g \mathopen{}\left( y \mathclose{}\right)"),
+        ("2", "(u + v)", r"2 \mathopen{}\left( u + v \mathclose{}\right)"),
+        ("x", "3", r"x \cdot 3"),
+        ("x", "y", "x y"),
+        ("x", "beta", r"x \beta"),
+        ("x", "bar", r"x \cdot \mathrm{bar}"),
+        ("x", "g(y)", r"x \cdot g \mathopen{}\left( y \mathclose{}\right)"),
+        ("x", "(u + v)", r"x \cdot \mathopen{}\left( u + v \mathclose{}\right)"),
+        ("alpha", "3", r"\alpha \cdot 3"),
+        ("alpha", "y", r"\alpha y"),
+        ("alpha", "beta", r"\alpha \beta"),
+        ("alpha", "bar", r"\alpha \cdot \mathrm{bar}"),
+        ("alpha", "g(y)", r"\alpha \cdot g \mathopen{}\left( y \mathclose{}\right)"),
+        (
+            "alpha",
+            "(u + v)",
+            r"\alpha \cdot \mathopen{}\left( u + v \mathclose{}\right)",
+        ),
+        ("foo", "3", r"\mathrm{foo} \cdot 3"),
+        ("foo", "y", r"\mathrm{foo} \cdot y"),
+        ("foo", "beta", r"\mathrm{foo} \cdot \beta"),
+        ("foo", "bar", r"\mathrm{foo} \cdot \mathrm{bar}"),
+        (
+            "foo",
+            "g(y)",
+            r"\mathrm{foo} \cdot g \mathopen{}\left( y \mathclose{}\right)",
+        ),
+        (
+            "foo",
+            "(u + v)",
+            r"\mathrm{foo} \cdot \mathopen{}\left( u + v \mathclose{}\right)",
+        ),
+        ("f(x)", "3", r"f \mathopen{}\left( x \mathclose{}\right) \cdot 3"),
+        ("f(x)", "y", r"f \mathopen{}\left( x \mathclose{}\right) \cdot y"),
+        ("f(x)", "beta", r"f \mathopen{}\left( x \mathclose{}\right) \cdot \beta"),
+        (
+            "f(x)",
+            "bar",
+            r"f \mathopen{}\left( x \mathclose{}\right) \cdot \mathrm{bar}",
+        ),
+        (
+            "f(x)",
+            "g(y)",
+            r"f \mathopen{}\left( x \mathclose{}\right)"
+            r" \cdot g \mathopen{}\left( y \mathclose{}\right)",
+        ),
+        (
+            "f(x)",
+            "(u + v)",
+            r"f \mathopen{}\left( x \mathclose{}\right)"
+            r" \cdot \mathopen{}\left( u + v \mathclose{}\right)",
+        ),
+        ("(s + t)", "3", r"\mathopen{}\left( s + t \mathclose{}\right) \cdot 3"),
+        ("(s + t)", "y", r"\mathopen{}\left( s + t \mathclose{}\right) y"),
+        ("(s + t)", "beta", r"\mathopen{}\left( s + t \mathclose{}\right) \beta"),
+        (
+            "(s + t)",
+            "bar",
+            r"\mathopen{}\left( s + t \mathclose{}\right) \mathrm{bar}",
+        ),
+        (
+            "(s + t)",
+            "g(y)",
+            r"\mathopen{}\left( s + t \mathclose{}\right)"
+            r" g \mathopen{}\left( y \mathclose{}\right)",
+        ),
+        (
+            "(s + t)",
+            "(u + v)",
+            r"\mathopen{}\left( s + t \mathclose{}\right)"
+            r" \mathopen{}\left( u + v \mathclose{}\right)",
+        ),
+    ],
+)
+def test_remove_multiply(left: str, right: str, latex: str) -> None:
+    for op in ["*", "@"]:
+        tree = ast_utils.parse_expr(f"{left} {op} {right}")
+        assert isinstance(tree, ast.BinOp)
+        assert (
+            expression_codegen.ExpressionCodegen(use_math_symbols=True).visit(tree)
+            == latex
+        )

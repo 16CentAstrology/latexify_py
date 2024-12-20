@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import ast
-import re
-import sys
-from typing import ClassVar, cast
+import keyword
+from typing import cast
+
+from latexify import ast_utils
 
 
 class IdentifierReplacer(ast.NodeTransformer):
@@ -24,8 +25,6 @@ class IdentifierReplacer(ast.NodeTransformer):
             return z
     """
 
-    _IDENTIFIER_PATTERN: ClassVar[re.Pattern] = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
     def __init__(self, mapping: dict[str, str]):
         """Initializer.
 
@@ -38,9 +37,9 @@ class IdentifierReplacer(ast.NodeTransformer):
         self._mapping = mapping
 
         for k, v in self._mapping.items():
-            if not self._IDENTIFIER_PATTERN.match(k):
+            if not str.isidentifier(k) or keyword.iskeyword(k):
                 raise ValueError(f"'{k}' is not an identifier name.")
-            if not self._IDENTIFIER_PATTERN.match(v):
+            if not str.isidentifier(v) or keyword.iskeyword(v):
                 raise ValueError(f"'{v}' is not an identifier name.")
 
     def _replace_args(self, args: list[ast.arg]) -> list[ast.arg]:
@@ -51,27 +50,23 @@ class IdentifierReplacer(ast.NodeTransformer):
         """Visit a FunctionDef node."""
         visited = cast(ast.FunctionDef, super().generic_visit(node))
 
-        if sys.version_info.minor < 8:
-            args = ast.arguments(
-                args=self._replace_args(visited.args.args),
-                kwonlyargs=self._replace_args(visited.args.kwonlyargs),
-                kw_defaults=visited.args.kw_defaults,
-                defaults=visited.args.defaults,
-            )
-        else:
-            args = ast.arguments(
-                posonlyargs=self._replace_args(visited.args.posonlyargs),  # from 3.8
-                args=self._replace_args(visited.args.args),
-                kwonlyargs=self._replace_args(visited.args.kwonlyargs),
-                kw_defaults=visited.args.kw_defaults,
-                defaults=visited.args.defaults,
-            )
-
-        return ast.FunctionDef(
+        args = ast.arguments(
+            posonlyargs=self._replace_args(visited.args.posonlyargs),
+            args=self._replace_args(visited.args.args),
+            vararg=visited.args.vararg,
+            kwonlyargs=self._replace_args(visited.args.kwonlyargs),
+            kw_defaults=visited.args.kw_defaults,
+            kwarg=visited.args.kwarg,
+            defaults=visited.args.defaults,
+        )
+        type_params = getattr(visited, "type_params", [])
+        return ast_utils.create_function_def(
             name=self._mapping.get(visited.name, visited.name),
             args=args,
             body=visited.body,
             decorator_list=visited.decorator_list,
+            returns=visited.returns,
+            type_params=type_params,
         )
 
     def visit_Name(self, node: ast.Name) -> ast.Name:

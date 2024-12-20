@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 
 from latexify import analyzers, ast_utils, exceptions
 from latexify.codegen import codegen_utils, expression_rules, identifier_converter
@@ -22,8 +23,8 @@ class ExpressionCodegen(ast.NodeVisitor):
         """Initializer.
 
         Args:
-            use_math_symbols: Whether to convert identifiers with a math symbol surface
-                (e.g., "alpha") to the LaTeX symbol (e.g., "\\alpha").
+            use_math_symbols: Whether to convert identifiers with a math symbol
+                surface (e.g., "alpha") to the LaTeX symbol (e.g., "\\alpha").
             use_set_symbols: Whether to use set symbols or not.
         """
         self._identifier_converter = identifier_converter.IdentifierConverter(
@@ -104,7 +105,7 @@ class ExpressionCodegen(ast.NodeVisitor):
         Returns:
             Generated LaTeX, or None if the node has unsupported syntax.
         """
-        if not isinstance(node.args[0], ast.GeneratorExp):
+        if not node.args or not isinstance(node.args[0], ast.GeneratorExp):
             return None
 
         name = ast_utils.extract_function_name_or_none(node)
@@ -218,6 +219,151 @@ class ExpressionCodegen(ast.NodeVisitor):
 
         return rf"\mathbf{{I}}_{{{ndims}}}"
 
+    def _generate_transpose(self, node: ast.Call) -> str | None:
+        """Generates LaTeX for numpy.transpose.
+        Args:
+            node: ast.Call node containing the appropriate method invocation.
+        Returns:
+            Generated LaTeX, or None if the node has unsupported syntax.
+        Raises:
+            LatexifyError: Unsupported argument type given.
+        """
+        name = ast_utils.extract_function_name_or_none(node)
+        assert name == "transpose"
+
+        if len(node.args) != 1:
+            return None
+
+        func_arg = node.args[0]
+        if isinstance(func_arg, ast.Name):
+            return rf"\mathbf{{{func_arg.id}}}^\intercal"
+        else:
+            return None
+
+    def _generate_determinant(self, node: ast.Call) -> str | None:
+        """Generates LaTeX for numpy.linalg.det.
+        Args:
+            node: ast.Call node containing the appropriate method invocation.
+        Returns:
+            Generated LaTeX, or None if the node has unsupported syntax.
+        Raises:
+            LatexifyError: Unsupported argument type given.
+        """
+        name = ast_utils.extract_function_name_or_none(node)
+        assert name == "det"
+
+        if len(node.args) != 1:
+            return None
+
+        func_arg = node.args[0]
+        if isinstance(func_arg, ast.Name):
+            arg_id = rf"\mathbf{{{func_arg.id}}}"
+            return rf"\det \mathopen{{}}\left( {arg_id} \mathclose{{}}\right)"
+        elif isinstance(func_arg, ast.List):
+            matrix = self._generate_matrix(node)
+            return rf"\det \mathopen{{}}\left( {matrix} \mathclose{{}}\right)"
+
+        return None
+
+    def _generate_matrix_rank(self, node: ast.Call) -> str | None:
+        """Generates LaTeX for numpy.linalg.matrix_rank.
+        Args:
+            node: ast.Call node containing the appropriate method invocation.
+        Returns:
+            Generated LaTeX, or None if the node has unsupported syntax.
+        Raises:
+            LatexifyError: Unsupported argument type given.
+        """
+        name = ast_utils.extract_function_name_or_none(node)
+        assert name == "matrix_rank"
+
+        if len(node.args) != 1:
+            return None
+
+        func_arg = node.args[0]
+        if isinstance(func_arg, ast.Name):
+            arg_id = rf"\mathbf{{{func_arg.id}}}"
+            return (
+                rf"\mathrm{{rank}} \mathopen{{}}\left( {arg_id} \mathclose{{}}\right)"
+            )
+        elif isinstance(func_arg, ast.List):
+            matrix = self._generate_matrix(node)
+            return (
+                rf"\mathrm{{rank}} \mathopen{{}}\left( {matrix} \mathclose{{}}\right)"
+            )
+
+        return None
+
+    def _generate_matrix_power(self, node: ast.Call) -> str | None:
+        """Generates LaTeX for numpy.linalg.matrix_power.
+        Args:
+            node: ast.Call node containing the appropriate method invocation.
+        Returns:
+            Generated LaTeX, or None if the node has unsupported syntax.
+        Raises:
+            LatexifyError: Unsupported argument type given.
+        """
+        name = ast_utils.extract_function_name_or_none(node)
+        assert name == "matrix_power"
+
+        if len(node.args) != 2:
+            return None
+
+        func_arg = node.args[0]
+        power_arg = node.args[1]
+        if isinstance(power_arg, ast.Num):
+            if isinstance(func_arg, ast.Name):
+                return rf"\mathbf{{{func_arg.id}}}^{{{power_arg.n}}}"
+            elif isinstance(func_arg, ast.List):
+                matrix = self._generate_matrix(node)
+                if matrix is not None:
+                    return rf"{matrix}^{{{power_arg.n}}}"
+        return None
+
+    def _generate_inv(self, node: ast.Call) -> str | None:
+        """Generates LaTeX for numpy.linalg.inv.
+        Args:
+            node: ast.Call node containing the appropriate method invocation.
+        Returns:
+            Generated LaTeX, or None if the node has unsupported syntax.
+        Raises:
+            LatexifyError: Unsupported argument type given.
+        """
+        name = ast_utils.extract_function_name_or_none(node)
+        assert name == "inv"
+
+        if len(node.args) != 1:
+            return None
+
+        func_arg = node.args[0]
+        if isinstance(func_arg, ast.Name):
+            return rf"\mathbf{{{func_arg.id}}}^{{-1}}"
+        elif isinstance(func_arg, ast.List):
+            return rf"{self._generate_matrix(node)}^{{-1}}"
+        return None
+
+    def _generate_pinv(self, node: ast.Call) -> str | None:
+        """Generates LaTeX for numpy.linalg.pinv.
+        Args:
+            node: ast.Call node containing the appropriate method invocation.
+        Returns:
+            Generated LaTeX, or None if the node has unsupported syntax.
+        Raises:
+            LatexifyError: Unsupported argument type given.
+        """
+        name = ast_utils.extract_function_name_or_none(node)
+        assert name == "pinv"
+
+        if len(node.args) != 1:
+            return None
+
+        func_arg = node.args[0]
+        if isinstance(func_arg, ast.Name):
+            return rf"\mathbf{{{func_arg.id}}}^{{+}}"
+        elif isinstance(func_arg, ast.List):
+            return rf"{self._generate_matrix(node)}^{{+}}"
+        return None
+
     def visit_Call(self, node: ast.Call) -> str:
         """Visit a Call node."""
         func_name = ast_utils.extract_function_name_or_none(node)
@@ -232,6 +378,18 @@ class ExpressionCodegen(ast.NodeVisitor):
             special_latex = self._generate_zeros(node)
         elif func_name == "identity":
             special_latex = self._generate_identity(node)
+        elif func_name == "transpose":
+            special_latex = self._generate_transpose(node)
+        elif func_name == "det":
+            special_latex = self._generate_determinant(node)
+        elif func_name == "matrix_rank":
+            special_latex = self._generate_matrix_rank(node)
+        elif func_name == "matrix_power":
+            special_latex = self._generate_matrix_power(node)
+        elif func_name == "inv":
+            special_latex = self._generate_inv(node)
+        elif func_name == "pinv":
+            special_latex = self._generate_pinv(node)
         else:
             special_latex = None
 
@@ -250,16 +408,22 @@ class ExpressionCodegen(ast.NodeVisitor):
 
         if rule.is_unary and len(node.args) == 1:
             # Unary function. Applies the same wrapping policy with the unary operators.
+            precedence = expression_rules.get_precedence(node)
+            arg = node.args[0]
             # NOTE(odashi):
             # Factorial "x!" is treated as a special case: it requires both inner/outer
             # parentheses for correct interpretation.
-            precedence = expression_rules.get_precedence(node)
-            arg = node.args[0]
-            force_wrap = isinstance(arg, ast.Call) and (
+            force_wrap_factorial = isinstance(arg, ast.Call) and (
                 func_name == "factorial"
                 or ast_utils.extract_function_name_or_none(arg) == "factorial"
             )
-            arg_latex = self._wrap_operand(arg, precedence, force_wrap)
+            # Note(odashi):
+            # Wrapping is also required if the argument is pow.
+            # https://github.com/google/latexify_py/issues/189
+            force_wrap_pow = isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.Pow)
+            arg_latex = self._wrap_operand(
+                arg, precedence, force_wrap_factorial or force_wrap_pow
+            )
             elements = [rule.left, arg_latex, rule.right]
         else:
             arg_latex = ", ".join(self.visit(arg) for arg in node.args)
@@ -332,7 +496,7 @@ class ExpressionCodegen(ast.NodeVisitor):
         latex = self.visit(child)
         child_prec = expression_rules.get_precedence(child)
 
-        if child_prec < parent_prec or force_wrap and child_prec == parent_prec:
+        if force_wrap or child_prec < parent_prec:
             return rf"\mathopen{{}}\left( {latex} \mathclose{{}}\right)"
 
         return latex
@@ -383,12 +547,94 @@ class ExpressionCodegen(ast.NodeVisitor):
 
         return rf"\mathopen{{}}\left( {latex} \mathclose{{}}\right)"
 
+    _l_bracket_pattern = re.compile(r"^\\mathopen.*")
+    _r_bracket_pattern = re.compile(r".*\\mathclose[^ ]+$")
+    _r_word_pattern = re.compile(r"\\mathrm\{[^ ]+\}$")
+
+    def _should_remove_multiply_op(
+        self, l_latex: str, r_latex: str, l_expr: ast.expr, r_expr: ast.expr
+    ):
+        """Determine whether the multiply operator should be removed or not.
+
+        See also:
+        https://github.com/google/latexify_py/issues/89#issuecomment-1344967636
+
+        This is an ad-hoc implementation.
+        This function doesn't fully implements the above requirements, but only
+        essential ones necessary to release v0.3.
+        """
+
+        # NOTE(odashi): For compatibility with Python 3.7, we compare the generated
+        # caracter type directly to determine the "numeric" type.
+
+        if isinstance(l_expr, ast.Call):
+            l_type = "f"
+        elif self._r_bracket_pattern.match(l_latex):
+            l_type = "b"
+        elif self._r_word_pattern.match(l_latex):
+            l_type = "w"
+        elif l_latex[-1].isnumeric():
+            l_type = "n"
+        else:
+            le = l_expr
+            while True:
+                if isinstance(le, ast.UnaryOp):
+                    le = le.operand
+                elif isinstance(le, ast.BinOp):
+                    le = le.right
+                elif isinstance(le, ast.Compare):
+                    le = le.comparators[-1]
+                elif isinstance(le, ast.BoolOp):
+                    le = le.values[-1]
+                else:
+                    break
+            l_type = "a" if isinstance(le, ast.Name) and len(le.id) == 1 else "m"
+
+        if isinstance(r_expr, ast.Call):
+            r_type = "f"
+        elif self._l_bracket_pattern.match(r_latex):
+            r_type = "b"
+        elif r_latex.startswith("\\mathrm"):
+            r_type = "w"
+        elif r_latex[0].isnumeric():
+            r_type = "n"
+        else:
+            re = r_expr
+            while True:
+                if isinstance(re, ast.UnaryOp):
+                    if isinstance(re.op, ast.USub):
+                        # NOTE(odashi): Unary "-" always require \cdot.
+                        return False
+                    re = re.operand
+                elif isinstance(re, ast.BinOp):
+                    re = re.left
+                elif isinstance(re, ast.Compare):
+                    re = re.left
+                elif isinstance(re, ast.BoolOp):
+                    re = re.values[0]
+                else:
+                    break
+            r_type = "a" if isinstance(re, ast.Name) and len(re.id) == 1 else "m"
+
+        if r_type == "n":
+            return False
+        if l_type in "bn":
+            return True
+        if l_type in "am" and r_type in "am":
+            return True
+        return False
+
     def visit_BinOp(self, node: ast.BinOp) -> str:
         """Visit a BinOp node."""
         prec = expression_rules.get_precedence(node)
         rule = self._bin_op_rules[type(node.op)]
         lhs = self._wrap_binop_operand(node.left, prec, rule.operand_left)
         rhs = self._wrap_binop_operand(node.right, prec, rule.operand_right)
+
+        if type(node.op) in [ast.Mult, ast.MatMult]:
+            if self._should_remove_multiply_op(lhs, rhs, node.left, node.right):
+                return f"{rule.latex_left}{lhs} {rhs}{rule.latex_right}"
+
         return f"{rule.latex_left}{lhs}{rule.latex_middle}{rhs}{rule.latex_right}"
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> str:
